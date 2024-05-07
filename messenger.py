@@ -1,10 +1,18 @@
 import imaplib
 import email
 import re
-from booker import book_room
+import yaml
+import smtplib
+import booker
 from users import in_database, add_user, update_password
 from email.header import decode_header
+from email.message import EmailMessage
+
+
+with open('config.yaml', 'r') as file:
+    booking_account = yaml.safe_load(file)
     
+
 def get_body(msg):
     if msg.is_multipart(): # handling multipart emails
         for part in msg.walk():
@@ -13,9 +21,9 @@ def get_body(msg):
     else:
         return msg.get_payload()
 
-def check_email(username, password):
+def check_email():
     mail = imaplib.IMAP4_SSL("imap.gmail.com")
-    mail.login(username, password)
+    mail.login(booking_account['username'], booking_account['password'])
     mail.select('inbox')
     status, messages = mail.search(None, '(UNSEEN)')
 
@@ -43,9 +51,13 @@ def check_email(username, password):
                 del requests[0]
 
                 if in_database(username, password): # ensuring the user is in the database
-                    book_room(email,password,requests)
+                    booker.book(username, password, requests)
                 else:
-                    # send email with error
+                    send_email(username, 'Error as Occured', 
+                               '''
+                               You are not in our database, send an email with your credentials
+                               with 'User' in the subject.
+                               ''')
                     pass
 
             elif 'User' in subject:
@@ -58,3 +70,16 @@ def check_email(username, password):
                 else:
                     update_password(credentials[0],credentials[1])
 
+
+def send_email(reciever, subject, message):
+    # construct email message
+    msg = EmailMessage()
+    msg['Subject'] = subject
+    msg['From'] = booking_account['username']
+    msg['To'] = reciever
+    msg.set_content(message)
+
+    # send the amil
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+        smtp.login(booking_account['username'], booking_account['password'])
+        smtp.send_message(msg)
